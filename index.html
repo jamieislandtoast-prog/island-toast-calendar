@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>島嶼生吐司 - 行事曆</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React + ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel: 讓瀏覽器能跑 JSX（重點！） -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+    .animate-marquee { display: inline-flex; animation: marquee 15s linear infinite; }
+  </style>
+</head>
+<body class="bg-[#FFFDFB]">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function App() {
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [events, setEvents] = useState({});
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [isModalOpen, setIsModalOpen] = useState(false);
+      const [editingEvent, setEditingEvent] = useState({ location: '', time: '', note: '', type: 'work' });
+
+      const [appSettings] = useState({
+        title: '島嶼生吐司',
+        subtitle: '來自大海氣息的蓬鬆柔軟',
+        marquee: '🍞 每日新鮮限量現烤，歡迎透過 LINE 提前預約！',
+        lineId: '@516mdfqz',
+        logoUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=200&h=200&auto=format&fit=crop',
+      });
+
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('admin') === '1') setIsAdmin(true);
+
+        // 先用 localStorage 當資料庫（單一 HTML 版本最穩）
+        const saved = localStorage.getItem('island_events_v1');
+        if (saved) setEvents(JSON.parse(saved));
+      }, []);
+
+      useEffect(() => {
+        localStorage.setItem('island_events_v1', JSON.stringify(events));
+      }, [events]);
+
+      const changeMonth = (offset) => {
+        const newDate = new Date(currentDate);
+        newDate.setMonth(currentDate.getMonth() + offset);
+        setCurrentDate(newDate);
+      };
+
+      const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
+      const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+
+      const openDay = (dateKey) => {
+        setSelectedDate(dateKey);
+        setEditingEvent(events[dateKey] || { location: '', time: '', note: '', type: 'work' });
+        setIsModalOpen(true);
+      };
+
+      const saveDay = () => {
+        setEvents(prev => ({ ...prev, [selectedDate]: editingEvent }));
+        setIsModalOpen(false);
+      };
+
+      const deleteDay = () => {
+        if (!confirm('確定刪除此日行程？')) return;
+        const copy = { ...events };
+        delete copy[selectedDate];
+        setEvents(copy);
+        setIsModalOpen(false);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col items-center py-6 px-4 font-sans">
+          <div className="w-full max-w-md bg-white shadow-2xl rounded-[3rem] overflow-hidden border border-orange-50 flex flex-col relative pb-10">
+            {isAdmin && <div className="bg-yellow-400 text-[10px] font-black py-1 text-center sticky top-0 z-[60]">管理員編輯模式</div>}
+
+            <div className="bg-orange-600 text-white py-2 overflow-hidden whitespace-nowrap">
+              <div className="flex animate-marquee font-bold text-xs">
+                <span className="px-8">{appSettings.marquee}</span>
+                <span className="px-8">{appSettings.marquee}</span>
+              </div>
+            </div>
+
+            <div className="pt-10 pb-6 text-center relative">
+              <div className="flex justify-center mb-4">
+                <img src={appSettings.logoUrl} className="w-24 h-24 rounded-[1.6rem] object-cover border-4 border-orange-100 shadow-sm" alt="Logo" />
+              </div>
+              <h1 className="text-3xl font-black text-gray-800">{appSettings.title}</h1>
+              <p className="text-orange-600 text-[10px] font-black tracking-widest uppercase mt-1">{appSettings.subtitle}</p>
+            </div>
+
+            <div className="px-6 py-4 bg-orange-50/30">
+              <div className="flex items-center justify-between mb-4">
+                <button onClick={() => changeMonth(-1)} className="p-2 text-orange-400 hover:text-orange-600">◀</button>
+                <div className="text-lg font-black text-gray-700">{currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月</div>
+                <button onClick={() => changeMonth(1)} className="p-2 text-orange-400 hover:text-orange-600">▶</button>
+              </div>
+
+              <div className="grid grid-cols-7 bg-white rounded-2xl overflow-hidden shadow-sm border border-orange-100">
+                {['日','一','二','三','四','五','六'].map(d => (
+                  <div key={d} className="py-2 text-center text-[10px] font-bold text-orange-300">{d}</div>
+                ))}
+
+                {Array.from({ length: firstDay }).map((_, i) => (
+                  <div key={`empty-${i}`} className="h-14 border-t border-r border-orange-50 bg-gray-50/20"></div>
+                ))}
+
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const d = i + 1;
+                  const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                  const event = events[dateKey];
+                  const isToday = new Date().toDateString() === new Date(currentDate.getFullYear(), currentDate.getMonth(), d).toDateString();
+
+                  return (
+                    <div key={d}
+                      onClick={() => openDay(dateKey)}
+                      className={`h-14 border-t border-r border-orange-50 p-1 cursor-pointer hover:bg-orange-50 transition-colors relative ${isToday ? 'bg-orange-50/50' : ''}`}>
+                      <span className={`text-[10px] font-bold ${isToday ? 'bg-orange-600 text-white w-4 h-4 flex items-center justify-center rounded-full' : 'text-gray-400'}`}>{d}</span>
+                      {event && (
+                        <div className={`mt-0.5 text-[8px] p-0.5 rounded-sm truncate font-black ${event.type === 'work' ? 'bg-orange-100 text-orange-700 border-l-2 border-orange-500' : 'bg-gray-100 text-gray-400 border-l-2 border-gray-300'}`}>
+                          {event.type === 'rest' ? '休' : event.location}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-8 space-y-8">
+              <a href={`https://line.me/R/ti/p/~${appSettings.lineId.replace('@','')}`} target="_blank" rel="noreferrer"
+                className="w-full bg-[#06C755] text-white py-4 rounded-2xl flex items-center justify-center gap-2 font-black shadow-lg active:scale-95 transition-transform">
+                LINE 預訂詢問
+              </a>
+
+              <div className="text-xs text-gray-400 font-bold leading-relaxed">
+                ✅ 這是「單一 HTML 版」：資料存在你的瀏覽器（localStorage）。<br/>
+                若要多人同步、照片上傳、雲端設定，再升級 Firebase 版。
+              </div>
+            </div>
+          </div>
+
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-[100]" onClick={() => setIsModalOpen(false)}>
+              <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-black text-gray-800">{selectedDate}</h3>
+                  <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+
+                {isAdmin ? (
+                  <div className="space-y-4">
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-2xl">
+                      <button onClick={()=>setEditingEvent({...editingEvent, type:'work'})}
+                        className={`flex-1 py-3 rounded-xl font-black transition-all ${editingEvent.type==='work'?'bg-white text-orange-600 shadow-sm':'text-gray-400'}`}>出攤</button>
+                      <button onClick={()=>setEditingEvent({...editingEvent, type:'rest'})}
+                        className={`flex-1 py-3 rounded-xl font-black transition-all ${editingEvent.type==='rest'?'bg-white text-gray-500 shadow-sm':'text-gray-400'}`}>店休</button>
+                    </div>
+
+                    {editingEvent.type === 'work' && (
+                      <div className="space-y-3">
+                        <input className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none focus:ring-2 ring-orange-500"
+                          placeholder="擺攤地點" value={editingEvent.location}
+                          onChange={e=>setEditingEvent({...editingEvent, location:e.target.value})} />
+                        <input className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none focus:ring-2 ring-orange-500"
+                          placeholder="時間 (例：14:00-完售)" value={editingEvent.time}
+                          onChange={e=>setEditingEvent({...editingEvent, time:e.target.value})} />
+                      </div>
+                    )}
+
+                    <textarea className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none h-24 resize-none"
+                      placeholder="備註事項" value={editingEvent.note}
+                      onChange={e=>setEditingEvent({...editingEvent, note:e.target.value})} />
+
+                    <button onClick={saveDay}
+                      className="w-full bg-orange-600 text-white py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-transform">
+                      儲存並發佈
+                    </button>
+
+                    <button onClick={deleteDay} className="w-full text-red-500 py-2 text-xs font-bold">
+                      刪除此日行程
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-6 space-y-4">
+                    {events[selectedDate]?.type === 'rest' ? (
+                      <div className="space-y-2">
+                        <div className="text-3xl font-black text-gray-300 italic">OFF DAY</div>
+                        <p className="text-gray-400 font-bold">今日店休，休息是為了走更長的路</p>
+                      </div>
+                    ) : (
+                      <div className="bg-orange-50 p-6 rounded-[2rem] border-2 border-orange-100">
+                        <div className="text-sm font-black text-orange-400 uppercase tracking-widest mb-2">Location</div>
+                        <div className="text-2xl font-black text-orange-600 mb-4">{events[selectedDate]?.location || '當日暫無行程'}</div>
+                        {events[selectedDate]?.time && (
+                          <>
+                            <div className="text-sm font-black text-orange-400 uppercase tracking-widest mb-1">Time</div>
+                            <div className="text-lg font-bold text-gray-700">{events[selectedDate].time}</div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => setIsModalOpen(false)} className="w-full bg-gray-100 text-gray-500 py-4 rounded-2xl font-black mt-4">
+                      關閉視窗
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
