@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>島嶼生吐司-餐車跑攤行事曆</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入必要的函式庫 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .lucide { display: inline-block; vertical-align: middle; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #ea580c; border-radius: 10px; }
+        .scale-in-center { animation: scale-in-center 0.2s cubic-bezier(0.250, 0.460, 0.450, 0.940) both; }
+        @keyframes scale-in-center { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        
+        #share-card-container {
+            position: fixed;
+            left: -9999px;
+            top: -9999px;
+            z-index: -100;
+        }
+    </style>
+</head>
+<body class="bg-orange-50/30">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        const { useState, useEffect, useRef } = React;
+
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- 配置提醒：請在此填入您的 Firebase 配置 ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyBiP8A8PrlZd31AdbcF_BPVRz6Q4OymDEc", 
+            authDomain: "island-toast-app.firebaseapp.com",
+            projectId: "island-toast-app",
+            storageBucket: "island-toast-app.firebasestorage.app",
+            messagingSenderId: "426992761060",
+            appId: "1:426992761060:web:4cf940fedbc1fa2a3cd4f1"
+        };
+        const appId = 'island-toast-calendar';
+
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current && window.lucide) {
+                    const iconName = name.charAt(0).toUpperCase() + name.slice(1);
+                    const lucideIcon = window.lucide[name] || window.lucide[iconName];
+                    if (lucideIcon) {
+                        iconRef.current.innerHTML = '';
+                        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                        svg.setAttribute("width", size);
+                        svg.setAttribute("height", size);
+                        svg.setAttribute("viewBox", "0 0 24 24");
+                        svg.setAttribute("fill", "none");
+                        svg.setAttribute("stroke", "currentColor");
+                        svg.setAttribute("stroke-width", "2");
+                        svg.setAttribute("stroke-linecap", "round");
+                        svg.setAttribute("stroke-linejoin", "round");
+                        svg.setAttribute("class", `lucide lucide-${name} ${className}`);
+                        if (Array.isArray(lucideIcon) && lucideIcon[1]) {
+                            lucideIcon[1].forEach(item => {
+                                const child = document.createElementNS("http://www.w3.org/2000/svg", item[0]);
+                                Object.entries(item[1] || {}).forEach(([k, v]) => child.setAttribute(k, String(v)));
+                                svg.appendChild(child);
+                            });
+                        }
+                        iconRef.current.appendChild(svg);
+                    }
+                }
+            }, [name, size, className]);
+            return <span ref={iconRef} className={`inline-flex items-center justify-center ${className}`} style={{ width: size, height: size }} />;
+        };
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [isAdmin, setIsAdmin] = useState(false); 
+            const [currentDate, setCurrentDate] = useState(new Date());
+            const [events, setEvents] = useState({});
+            const [photos, setPhotos] = useState([]);
+            const [authStatus, setAuthStatus] = useState("initializing"); 
+            const [appSettings, setAppSettings] = useState({
+                title: '島嶼生吐司',
+                subtitle: '餐車跑攤行事曆',
+                logoUrl: '',
+                lineId: '@lineid'
+            });
+
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [selectedDate, setSelectedDate] = useState(null);
+            const [isEditingSettings, setIsEditingSettings] = useState(false);
+            const [editingEvent, setEditingEvent] = useState({ location: '', address: '', time: '', note: '', type: 'work' });
+            const [tempSettings, setTempSettings] = useState({ ...appSettings });
+            const [isUploading, setIsUploading] = useState(false);
+            
+            const photoInputRef = useRef(null);
+            const logoInputRef = useRef(null);
+            const dbRef = useRef(null);
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('admin') === '1') setIsAdmin(true);
+
+                if (!firebaseConfig.apiKey) { setAuthStatus("error"); return; }
+
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                dbRef.current = getFirestore(app);
+
+                signInAnonymously(auth).then(() => setAuthStatus("success")).catch(() => setAuthStatus("error"));
+                onAuthStateChanged(auth, u => setUser(u));
+            }, []);
+
+            useEffect(() => {
+                if (!user || !dbRef.current) return;
+                const db = dbRef.current;
+                const unsubEvents = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'events'), snap => {
+                    const data = {}; snap.forEach(d => data[d.id] = d.data()); setEvents(data);
+                });
+                const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), snap => {
+                    if (snap.exists()) { setAppSettings(snap.data()); setTempSettings(snap.data()); }
+                });
+                const unsubPhotos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'photos'), snap => {
+                    const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }));
+                    setPhotos(data.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+                });
+                return () => { unsubEvents(); unsubSettings(); unsubPhotos(); };
+            }, [user]);
+
+            const saveEvent = async () => {
+                if (!isAdmin || !selectedDate || !dbRef.current) return;
+                await setDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'events', selectedDate), editingEvent);
+                setIsModalOpen(false);
+            };
+
+            const handleFileUpload = async (e, type) => {
+                if (!isAdmin || !dbRef.current) return;
+                const file = e.target.files[0];
+                if (!file || file.size > 1024 * 1024) return alert("圖片需小於 1MB");
+                setIsUploading(true);
+                const reader = new FileReader();
+                reader.onload = async event => {
+                    const base64 = event.target.result;
+                    if (type === 'logo') {
+                        await setDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'settings', 'general'), { ...appSettings, logoUrl: base64 }, { merge: true });
+                    } else {
+                        await addDoc(collection(dbRef.current, 'artifacts', appId, 'public', 'data', 'photos'), { url: base64, title: file.name.split('.')[0], createdAt: serverTimestamp() });
+                    }
+                    setIsUploading(false);
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const copyBookingInfo = () => {
+                const text = `你好！我想預訂 ${selectedDate} 在 ${editingEvent.location} 的場次。\n時間：${editingEvent.time}`;
+                const el = document.createElement('textarea');
+                el.value = text;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                window.open(`https://line.me/R/ti/p/~${appSettings.lineId.replace('@','')}`, '_blank');
+            };
+
+            const renderCalendar = () => {
+                const year = currentDate.getFullYear();
+                const month = currentDate.getMonth();
+                const firstDay = new Date(year, month, 1).getDay();
+                const totalDays = new Date(year, month + 1, 0).getDate();
+                const days = [];
+                for (let i = 0; i < firstDay; i++) days.push(<div key={`e-${i}`} className="h-16 border border-orange-50/50"></div>);
+                for (let d = 1; d <= totalDays; d++) {
+                    const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const event = events[dateKey];
+                    const isToday = new Date().toDateString() === new Date(year, month, d).toDateString();
+                    days.push(
+                        <div key={d} onClick={() => { 
+                            setSelectedDate(dateKey); 
+                            setEditingEvent(events[dateKey] || { location: '', address: '', time: '', note: '', type: 'work' }); 
+                            setIsModalOpen(true); 
+                        }}
+                        className="h-16 border border-orange-100 p-1 cursor-pointer transition-all hover:bg-orange-50 bg-white relative">
+                            <span className={`text-[10px] font-black ${isToday ? 'bg-orange-600 text-white w-5 h-5 flex items-center justify-center rounded-full' : 'text-gray-400'}`}>{d}</span>
+                            {event && (
+                                <div className={`mt-0.5 p-0.5 rounded-[4px] text-[8px] truncate border-l-2 shadow-sm font-bold ${event.type === 'work' ? 'bg-orange-50 text-orange-700 border-orange-500' : 'bg-gray-100 text-gray-500 border-gray-400'}`}>
+                                    {event.type === 'rest' ? '店休' : event.location}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
+                return days;
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col items-center py-4 px-2 md:py-10">
+                    <div className="w-full max-w-sm bg-white rounded-[3rem] shadow-2xl overflow-hidden border border-orange-100 flex flex-col relative ring-8 ring-white">
+                        {isAdmin && <div className="bg-yellow-400 text-[10px] font-black py-1 text-center flex items-center justify-center gap-1"><Icon name="lock" size={10}/> 管理員模式已開啟</div>}
+                        
+                        {/* Header */}
+                        <div className="bg-orange-600 p-6 text-white shadow-lg text-left">
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="flex gap-4 items-center">
+                                    <div onClick={() => isAdmin && logoInputRef.current.click()} className="w-14 h-14 bg-white rounded-2xl overflow-hidden flex items-center justify-center border-2 border-orange-300 cursor-pointer shadow-lg relative group">
+                                        {appSettings.logoUrl ? <img src={appSettings.logoUrl} className="max-h-full object-contain" /> : <Icon name="camera" className="text-orange-200" size={24} />}
+                                        <input type="file" ref={logoInputRef} onChange={e => handleFileUpload(e, 'logo')} className="hidden" accept="image/*" />
+                                        {isAdmin && <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Icon name="camera" size={14}/></div>}
+                                    </div>
+                                    <div><h1 className="text-xl font-black leading-none mb-1">{appSettings.title}</h1><p className="text-orange-100 text-[11px] font-bold opacity-80">{appSettings.subtitle}</p></div>
+                                </div>
+                                <div className="flex items-center gap-1 bg-black/10 backdrop-blur-md p-2 rounded-2xl text-[10px] font-black">
+                                    <button onClick={()=>setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))} className="p-1"><Icon name="chevron-left" size={14}/></button>
+                                    <span className="min-w-[40px] text-center">{currentDate.getMonth()+1}月</span>
+                                    <button onClick={()=>setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1))} className="p-1"><Icon name="chevron-right" size={14}/></button>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <a href={`https://line.me/R/ti/p/~${appSettings.lineId.replace('@','')}`} target="_blank" className="flex-1 bg-[#06C755] py-3 rounded-2xl flex items-center justify-center gap-2 text-xs font-black shadow-lg">
+                                    <Icon name="message-circle" size={16}/> LINE 客服 / 預訂
+                                </a>
+                                {isAdmin && <button onClick={()=>setIsEditingSettings(true)} className="bg-white/20 p-3 rounded-2xl flex items-center justify-center shadow-lg"><Icon name="settings" size={18}/></button>}
+                            </div>
+                        </div>
+
+                        {/* Calendar */}
+                        <div className="grid grid-cols-7 text-center text-[10px] font-black py-3 bg-orange-50 text-orange-600 border-b border-orange-100">
+                            {['日','一','二','三','四','五','六'].map(d=><div key={d}>{d}</div>)}
+                        </div>
+                        <div className="grid grid-cols-7">{renderCalendar()}</div>
+
+                        {/* Footer News */}
+                        <div className="p-6 bg-gray-50 flex-grow pb-12 overflow-y-auto max-h-[400px]">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-black text-orange-600 text-[10px] flex items-center gap-2 tracking-widest italic uppercase"><Icon name="megaphone" size={16}/> 最新公告與菜單</h3>
+                                {isAdmin && <button onClick={() => photoInputRef.current.click()} className="text-[10px] bg-orange-600 text-white px-3 py-1.5 rounded-full font-black shadow-lg">{isUploading ? '上傳中...' : '新增照片'}</button>}
+                                <input type="file" ref={photoInputRef} onChange={e => handleFileUpload(e, 'photo')} className="hidden" accept="image/*" />
+                            </div>
+                            <div className="space-y-4">
+                                {photos.length === 0 ? <div className="text-center py-10 text-gray-300 font-bold text-[10px] border-2 border-dashed rounded-[2rem] bg-white uppercase tracking-widest">目前無公告</div> : 
+                                photos.map(p => (
+                                    <div key={p.id} className="bg-white rounded-[2rem] overflow-hidden shadow-xl border-4 border-white relative group">
+                                        <img src={p.url} className="w-full" />
+                                        {isAdmin && <button onClick={async() => confirm('確定刪除此圖片？') && await deleteDoc(doc(dbRef.current,'artifacts',appId,'public', 'data', 'photos', p.id))} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={14}/></button>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 行程詳情視窗 */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-6 z-[100]" onClick={()=>setIsModalOpen(false)}>
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-xs p-8 shadow-2xl scale-in-center text-left" onClick={e=>e.stopPropagation()}>
+                                <div className="flex justify-between items-start mb-6 border-b pb-4">
+                                    <div><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">擺攤日期</p><h4 className="font-black text-orange-600 text-lg">{selectedDate}</h4></div>
+                                    <button onClick={()=>setIsModalOpen(false)} className="text-gray-400"><Icon name="x" size={20}/></button>
+                                </div>
+                                <div className="space-y-4">
+                                    {isAdmin ? (
+                                        <>
+                                            <div className="flex gap-2 p-1.5 bg-gray-100 rounded-2xl">
+                                                <button onClick={()=>setEditingEvent({...editingEvent, type:'work'})} className={`flex-1 py-2 text-xs font-black rounded-xl transition-all ${editingEvent.type==='work'?'bg-white text-orange-600 shadow-md':'text-gray-400'}`}>擺攤</button>
+                                                <button onClick={()=>setEditingEvent({...editingEvent, type:'rest'})} className={`flex-1 py-2 text-xs font-black rounded-xl transition-all ${editingEvent.type==='rest'?'bg-white text-gray-500 shadow-md':'text-gray-400'}`}>店休</button>
+                                            </div>
+                                            <input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none outline-none focus:ring-2 focus:ring-orange-100" value={editingEvent.location} onChange={e=>setEditingEvent({...editingEvent, location:e.target.value})} placeholder="擺攤地點" />
+                                            <input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none outline-none focus:ring-2 focus:ring-orange-100" value={editingEvent.time} onChange={e=>setEditingEvent({...editingEvent, time:e.target.value})} placeholder="營業時間" />
+                                            <textarea className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold h-20 border-none resize-none outline-none focus:ring-2 focus:ring-orange-100" value={editingEvent.note} onChange={e=>setEditingEvent({...editingEvent, note:e.target.value})} placeholder="備註" />
+                                            <button onClick={saveEvent} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-xl active:scale-95 transition-transform">儲存行程</button>
+                                        </>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {editingEvent.type === 'rest' ? <div className="py-10 text-center font-black text-gray-300 text-xl tracking-widest italic bg-gray-50 rounded-3xl">今日店休</div> : (
+                                                <div className="space-y-4">
+                                                    <div className="bg-gray-50 p-6 rounded-[2rem] space-y-4">
+                                                        <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">地點</label><p className="text-base font-black text-gray-700">{editingEvent.location || '未設定'}</p></div>
+                                                        <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">時間</label><p className="text-base font-black text-orange-600">{editingEvent.time || '未設定'}</p></div>
+                                                        {editingEvent.note && <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">備註</label><p className="text-xs font-bold text-gray-500 italic">"{editingEvent.note}"</p></div>}
+                                                    </div>
+                                                    <button onClick={copyBookingInfo} className="w-full py-4 bg-orange-600 text-white rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+                                                        <Icon name="send" size={16}/> 預訂此場次 (LINE)
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 系統設定視窗 */}
+                    {isEditingSettings && (
+                        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-6 z-[100]" onClick={()=>setIsEditingSettings(false)}>
+                            <div className="bg-white rounded-[2.5rem] w-full max-w-xs p-8 shadow-2xl scale-in-center text-left" onClick={e=>e.stopPropagation()}>
+                                <h4 className="font-black text-gray-800 text-center mb-6 text-lg tracking-widest border-b pb-4">後台設定</h4>
+                                <div className="space-y-4">
+                                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 ml-2">餐車名稱</label><input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none" value={tempSettings.title} onChange={e=>setTempSettings({...tempSettings, title:e.target.value})} /></div>
+                                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 ml-2">副標語</label><input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none" value={tempSettings.subtitle} onChange={e=>setTempSettings({...tempSettings, subtitle:e.target.value})} /></div>
+                                    <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 ml-2">LINE ID (不含@)</label><input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none" value={tempSettings.lineId} onChange={e=>setTempSettings({...tempSettings, lineId:e.target.value})} /></div>
+                                </div>
+                                <button onClick={async() => { 
+                                    if(dbRef.current) {
+                                        await setDoc(doc(dbRef.current, 'artifacts', appId, 'public', 'data', 'settings', 'general'), tempSettings); 
+                                        setIsEditingSettings(false); 
+                                    }
+                                }} className="w-full py-4 bg-gray-900 text-white rounded-2xl font-black shadow-xl mt-8 active:scale-95 transition-transform">儲存並更新</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
