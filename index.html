@@ -1,414 +1,288 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, collection, doc, onSnapshot, setDoc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import * as LucideIcons from 'lucide-react';
+import { 
+  ChevronLeft, ChevronRight, Plus, Trash2, X, Camera, MessageCircle, Settings, Heart, Info
+} from 'lucide-react';
 
-const Icon = ({ name, size = 16, className = "" }) => {
-  const IconComponent = LucideIcons[name] || LucideIcons.HelpCircle;
-  return <IconComponent size={size} className={className} />;
+// 這是您的 Firebase 身分證，請勿隨意修改
+const firebaseConfig = {
+  apiKey: "AIzaSyBiP8A8PrlZd31AdbcF_BPVRz6Q4OymDEc",
+  authDomain: "island-toast-app.firebaseapp.com",
+  projectId: "island-toast-app",
+  storageBucket: "island-toast-app.firebasestorage.app",
+  messagingSenderId: "426992761060",
+  appId: "1:426992761060:web:4cf940fedbc1fa2a3cd4f1"
 };
 
-const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'island-toast-calendar';
+const ISLAND_APP_ID = 'island-toast-live'; 
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [viewMode, setViewMode] = useState('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState({});
   const [photos, setPhotos] = useState([]);
   const [appSettings, setAppSettings] = useState({
     title: '島嶼生吐司',
-    subtitle: 'Island Toast - 餐車行程表',
+    subtitle: '來自大海氣息的蓬鬆柔軟',
     lineId: '@516mdfqz',
     logoUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=200&h=200&auto=format&fit=crop',
-    marquee: '🚚 每日新鮮現烤，歡迎提前透過 LINE 預約訂購！',
-    brandStory: '來自大海的氣息，揉進每一片蓬鬆的吐司裡。我們堅持使用日本優質麵粉與純淨水源，讓簡單的吐司也能擁有不簡單的靈魂。',
-    toastIntro: '【經典原味】奶香濃郁、Q彈有勁；【手作抹茶】甘甜不澀，茶香繚繞。'
+    marquee: '🍞 每日新鮮限量現烤，歡迎透過 LINE 提前預約！',
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [previewImage, setPreviewImage] = useState(null);
-  const [editingEvent, setEditingEvent] = useState({ location: '', time: '', note: '', type: 'work' });
+  const [editingEvent, setEditingEvent] = useState({ location: '', type: 'work' });
   const [tempSettings, setTempSettings] = useState({ ...appSettings });
   const [isUploading, setIsUploading] = useState(false);
 
   const fileInputRef = useRef(null);
   const logoInputRef = useRef(null);
 
+  // 登入邏輯：進網頁自動變訪客
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === '1') {
-      setIsAdmin(true);
-    }
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) { console.error(err); }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    if (params.get('admin') === '1') setIsAdmin(true);
+
+    signInAnonymously(auth).catch(err => console.error("登入失敗", err));
+    
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
 
+  // 抓取雲端資料
   useEffect(() => {
     if (!user) return;
-    const unsubEvents = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'events'), (snap) => {
+
+    // 抓行程
+    const unsubEvents = onSnapshot(collection(db, 'artifacts', ISLAND_APP_ID, 'public', 'data', 'events'), (snap) => {
       const data = {}; snap.forEach(d => data[d.id] = d.data()); setEvents(data);
-    }, (err) => console.error(err));
+    });
     
-    const unsubPhotos = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'photos'), (snap) => {
+    // 抓照片
+    const unsubPhotos = onSnapshot(collection(db, 'artifacts', ISLAND_APP_ID, 'public', 'data', 'photos'), (snap) => {
       const data = []; snap.forEach(d => data.push({ id: d.id, ...d.data() }));
       setPhotos(data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
-    }, (err) => console.error(err));
+    });
     
-    const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setAppSettings(prev => ({ ...prev, ...data }));
-        setTempSettings(prev => ({ ...prev, ...data }));
-      }
-    }, (err) => console.error(err));
+    // 抓設定
+    const unsubSettings = onSnapshot(doc(db, 'artifacts', ISLAND_APP_ID, 'public', 'data', 'settings', 'general'), (snap) => {
+      if (snap.exists()) setAppSettings(snap.data());
+    });
     
     return () => { unsubEvents(); unsubPhotos(); unsubSettings(); };
   }, [user]);
 
-  const formatDate = (date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const getWeekDays = (date) => {
-    const startOfWeek = new Date(date);
-    const day = startOfWeek.getDay();
-    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-    startOfWeek.setDate(diff);
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const nextDay = new Date(startOfWeek);
-      nextDay.setDate(startOfWeek.getDate() + i);
-      days.push(nextDay);
-    }
-    return days;
-  };
-
-  const changeDateRange = (offset) => {
+  // 修改日期
+  const changeMonth = (offset) => {
     const newDate = new Date(currentDate);
-    if (viewMode === 'month') {
-      newDate.setMonth(currentDate.getMonth() + offset);
-    } else {
-      newDate.setDate(currentDate.getDate() + (offset * 7));
-    }
+    newDate.setMonth(currentDate.getMonth() + offset);
     setCurrentDate(newDate);
   };
 
-  const saveEvent = async () => {
-    if (!isAdmin || !selectedDate || !user) return;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events', selectedDate), editingEvent);
-    setIsModalOpen(false);
+  // 圖片壓縮輔助工具
+  const compressImage = (file, maxWidth = 800) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxWidth) {
+            height = (maxWidth / width) * height;
+            width = maxWidth;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7)); // 壓縮品質設為 0.7
+        };
+      };
+    });
   };
 
-  const deleteEvent = async () => {
-    if (!isAdmin || !selectedDate || !user) return;
-    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events', selectedDate));
-    setIsModalOpen(false);
-  };
-
-  const saveSettings = async () => {
-    if (!isAdmin) return;
-    let formattedLineId = tempSettings.lineId.trim();
-    if (formattedLineId && !formattedLineId.startsWith('@')) formattedLineId = '@' + formattedLineId;
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), { ...tempSettings, lineId: formattedLineId });
-    setIsSettingsOpen(false);
-  };
-
-  const handleFileUpload = async (e, mode = 'photo') => {
+  // 圖片上傳轉雲端
+  const handleUpload = async (e, type) => {
     const file = e.target.files[0];
-    if (!file || !user) return;
+    if (!file) return;
+    
     setIsUploading(true);
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const base64Data = event.target.result;
-      if (mode === 'logo') {
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'general'), { ...appSettings, logoUrl: base64Data }, { merge: true });
+    try {
+      // 自動壓縮圖片，避免 file:// 協議下大檔案上傳失敗
+      const compressedBase64 = await compressImage(file, type === 'logo' ? 400 : 1000);
+      
+      if (type === 'logo') {
+        await setDoc(doc(db, 'artifacts', ISLAND_APP_ID, 'public', 'data', 'settings', 'general'), { ...appSettings, logoUrl: compressedBase64 }, { merge: true });
       } else {
-        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'photos'), { url: base64Data, createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'artifacts', ISLAND_APP_ID, 'public', 'data', 'photos'), { 
+          url: compressedBase64, createdAt: serverTimestamp() 
+        });
       }
-      setIsUploading(false);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const getLineLink = (date, data) => {
-    const lineId = appSettings.lineId.trim().replace('@', '');
-    const text = date && data?.type === 'work' 
-      ? `您好，我想預訂島嶼生吐司：\n---\n日期：${date}\n地點：${data.location}\n---\n姓名：\n電話：`
-      : `您好，我想詢問生吐司資訊：`;
-    return `https://line.me/R/ti/p/~${lineId}?text=${encodeURIComponent(text)}`;
+    } catch (err) { 
+      console.error(err);
+      alert("上傳失敗！原因可能：1.圖片太大 2.網路不穩 3.Firebase 權限尚未發佈"); 
+    }
+    setIsUploading(false);
+    // 清除 input，讓同一張圖可以重複選
+    e.target.value = '';
   };
 
   return (
-    <div className="min-h-screen bg-[#FFFDFB] flex flex-col items-center py-6 px-4 font-sans text-gray-800">
-      <div className="w-full max-w-md bg-white shadow-2xl rounded-[2.5rem] overflow-hidden border border-orange-50 flex flex-col relative">
+    <div className="min-h-screen bg-[#FFFDFB] flex flex-col items-center py-6 px-4">
+      <div className="w-full max-w-md bg-white shadow-2xl rounded-[3rem] overflow-hidden border border-orange-50 flex flex-col relative pb-10">
         
-        {isAdmin && <div className="bg-yellow-400 text-[10px] font-black py-1 text-center tracking-widest uppercase z-50">管理者模式 (ADMIN)</div>}
+        {isAdmin && <div className="bg-yellow-400 text-[10px] font-black py-1 text-center">管理員模式：您可以修改行程與圖片</div>}
 
-        {/* 跑馬燈區塊 */}
-        <div className="bg-orange-600 text-white overflow-hidden py-2 whitespace-nowrap relative border-b border-orange-700/30">
-          <div className="flex animate-marquee inline-block font-bold text-xs tracking-wider">
-            <span className="px-8">{appSettings.marquee}</span>
+        <div className="bg-orange-600 text-white py-2 overflow-hidden whitespace-nowrap">
+          <div className="flex animate-marquee font-bold text-xs">
             <span className="px-8">{appSettings.marquee}</span>
             <span className="px-8">{appSettings.marquee}</span>
           </div>
         </div>
 
-        <style dangerouslySetInnerHTML={{ __html: `
-          @keyframes marquee {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-33.33%); }
-          }
-          .animate-marquee {
-            display: inline-flex;
-            animation: marquee 20s linear infinite;
-          }
-        `}} />
+        <style>{`@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } } .animate-marquee { display: inline-flex; animation: marquee 15s linear infinite; }`}</style>
 
-        {/* Header */}
-        <div className="relative bg-white pt-8 pb-6 px-6 text-center border-b border-orange-100">
-          {isAdmin && <button onClick={() => setIsSettingsOpen(true)} className="absolute top-4 right-4 text-orange-200 hover:text-orange-600 transition-colors"><Icon name="Settings" size={20}/></button>}
+        <div className="pt-10 pb-6 text-center relative">
+          {isAdmin && <button onClick={() => { setTempSettings(appSettings); setIsSettingsOpen(true); }} className="absolute top-6 right-6 text-orange-200"><Settings size={20}/></button>}
           <div className="flex justify-center mb-4">
-            <div className={`p-1 rounded-3xl bg-gradient-to-br from-orange-400 to-orange-600 shadow-xl relative group ${isAdmin ? 'cursor-pointer' : ''}`} onClick={() => isAdmin && logoInputRef.current.click()}>
-              <img src={appSettings.logoUrl} className="w-20 h-20 rounded-[1.4rem] object-cover border-2 border-white/50 shadow-inner" alt="logo" />
-              {isAdmin && <div className="absolute inset-0 bg-black/40 rounded-[1.4rem] opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity"><Icon name="Camera" size={20}/></div>}
-              <input type="file" ref={logoInputRef} className="hidden" onChange={(e) => handleFileUpload(e, 'logo')} accept="image/*" />
+            <div className={`relative ${isAdmin ? 'cursor-pointer' : ''}`} onClick={() => isAdmin && logoInputRef.current.click()}>
+              <img src={appSettings.logoUrl} className="w-24 h-24 rounded-[1.6rem] object-cover border-4 border-orange-100" alt="Logo" />
+              <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={(e)=>handleUpload(e,'logo')} />
+              {isAdmin && <div className="absolute inset-0 bg-black/20 rounded-[1.6rem] flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"><Camera className="text-white" size={24}/></div>}
             </div>
           </div>
-          <h1 className="text-2xl font-black text-gray-800 tracking-tight">{appSettings.title}</h1>
-          <p className="text-orange-600 text-xs font-bold mt-1 tracking-widest uppercase opacity-80">{appSettings.subtitle}</p>
+          <h1 className="text-3xl font-black">{appSettings.title}</h1>
+          <p className="text-orange-600 text-[10px] font-black tracking-widest">{appSettings.subtitle}</p>
         </div>
 
-        {/* 日曆切換與按鈕 */}
-        <div className="px-6 py-4 flex flex-col gap-4 bg-orange-50/30">
-          <div className="flex items-center justify-between">
-            <button onClick={() => changeDateRange(-1)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm text-orange-600 hover:bg-orange-600 hover:text-white transition-all"><Icon name="ChevronLeft" size={20}/></button>
-            <div className="text-center">
-              <div className="text-lg font-black text-gray-800">{currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月</div>
-            </div>
-            <button onClick={() => changeDateRange(1)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm text-orange-600 hover:bg-orange-600 hover:text-white transition-all"><Icon name="ChevronRight" size={20}/></button>
+        <div className="px-6 py-4 bg-orange-50/30">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={() => changeMonth(-1)} className="p-2"><ChevronLeft/></button>
+            <div className="text-lg font-black">{currentDate.getFullYear()}年 {currentDate.getMonth() + 1}月</div>
+            <button onClick={() => changeMonth(1)} className="p-2"><ChevronRight/></button>
           </div>
-          <div className="flex p-1 bg-white/80 rounded-2xl shadow-inner backdrop-blur-sm">
-            <button onClick={() => setViewMode('month')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${viewMode === 'month' ? 'bg-orange-600 text-white shadow-lg' : 'text-gray-400 hover:text-orange-400'}`}>月檢視</button>
-            <button onClick={() => setViewMode('week')} className={`flex-1 py-2.5 rounded-xl text-xs font-black transition-all ${viewMode === 'week' ? 'bg-orange-600 text-white shadow-lg' : 'text-gray-400 hover:text-orange-400'}`}>週檢視</button>
+          <div className="grid grid-cols-7 bg-white rounded-2xl overflow-hidden shadow-sm border border-orange-100">
+            {['日','一','二','三','四','五','六'].map(d => <div key={d} className="py-2 text-center text-[10px] font-bold text-orange-300">{d}</div>)}
+            {Array.from({ length: new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay() }).map((_, i) => <div key={i} className="h-14 border-t border-r border-orange-50"></div>)}
+            {Array.from({ length: new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate() }).map((_, i) => {
+              const d = i + 1;
+              const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+              const event = events[dateKey];
+              const isToday = new Date().toDateString() === new Date(currentDate.getFullYear(), currentDate.getMonth(), d).toDateString();
+              return (
+                <div key={d} onClick={() => { setSelectedDate(dateKey); setEditingEvent(event || { location: '', type: 'work' }); setIsModalOpen(true); }}
+                  className={`h-14 border-t border-r border-orange-50 p-1 cursor-pointer hover:bg-orange-50 transition-colors ${isToday ? 'bg-orange-50/50' : ''}`}>
+                  <span className={`text-[10px] font-bold ${isToday ? 'text-orange-600' : 'text-gray-400'}`}>{d}</span>
+                  {event && <div className={`text-[8px] p-0.5 rounded-sm truncate font-black ${event.type === 'work' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'}`}>{event.type === 'rest' ? '休' : event.location}</div>}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* 日曆主體 */}
-        <div className="flex-grow min-h-[400px]">
-          {viewMode === 'month' ? (
-            <div className="grid grid-cols-7 border-t border-orange-100">
-              {['日','一','二','三','四','五','六'].map(d => <div key={d} className="py-3 text-center text-[11px] font-black text-orange-300 bg-white border-b border-orange-50">{d}</div>)}
-              {Array.from({ length: new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay() }).map((_, i) => <div key={`empty-${i}`} className="h-20 border-b border-r border-orange-50 bg-gray-50/10"></div>)}
-              {Array.from({ length: new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate() }).map((_, i) => {
-                const d = i + 1;
-                const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                const event = events[dateKey];
-                const isToday = new Date().toLocaleDateString() === new Date(currentDate.getFullYear(), currentDate.getMonth(), d).toLocaleDateString();
-                return (
-                  <div key={d} onClick={() => { setSelectedDate(dateKey); setEditingEvent(event || { location: '', time: '', note: '', type: 'work' }); setIsModalOpen(true); }}
-                    className={`h-20 border-b border-r border-orange-100 p-1 flex flex-col bg-white cursor-pointer hover:bg-orange-50 ${!isAdmin && event?.type === 'rest' ? 'opacity-40' : ''}`}>
-                    <span className={`text-[10px] font-bold ${isToday ? 'bg-orange-600 text-white w-5 h-5 flex items-center justify-center rounded-full' : 'text-gray-400'}`}>{d}</span>
-                    {event && (
-                      <div className={`text-[9px] mt-1 p-1 rounded leading-tight font-bold ${event.type === 'work' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-400'}`}>
-                        <div className="truncate">{event.type === 'rest' ? '店休' : event.location}</div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="p-4 space-y-3">
-              {getWeekDays(currentDate).map(day => {
-                const dateKey = formatDate(day);
-                const event = events[dateKey];
-                const isToday = new Date().toLocaleDateString() === day.toLocaleDateString();
-                const isRest = event?.type === 'rest';
-                return (
-                  <div key={dateKey} onClick={() => { setSelectedDate(dateKey); setEditingEvent(event || { location: '', time: '', note: '', type: 'work' }); setIsModalOpen(true); }}
-                    className={`flex items-stretch bg-white rounded-3xl border border-orange-100 overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group ${isRest && !isAdmin ? 'opacity-50' : ''} ${isToday ? 'ring-2 ring-orange-500' : ''}`}>
-                    <div className={`w-16 flex flex-col items-center justify-center text-white ${isRest ? 'bg-gray-300' : isToday ? 'bg-orange-700' : 'bg-orange-500'}`}>
-                      <div className="text-[9px] font-black opacity-70 mb-1">{day.getMonth() + 1}月</div>
-                      <div className="text-xl font-black">{day.getDate()}</div>
-                    </div>
-                    <div className="flex-grow p-4 flex flex-col justify-center">
-                      {!event ? <div className="text-gray-300 text-sm italic font-medium">尚未安排行程</div> : isRest ? <div className="text-gray-400 font-bold text-sm italic">本日店休</div> : (
-                        <div className="space-y-0.5">
-                          <div className="text-gray-800 font-black text-sm">{event.location}</div>
-                          <div className="text-orange-600 font-bold text-[11px]">{event.time}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* 下方資訊區塊 */}
-        <div className="p-8 bg-white border-t border-orange-100 space-y-10 pb-20">
-          <a href={getLineLink()} target="_blank" className="w-full bg-[#06C755] text-white py-4 rounded-2xl flex items-center justify-center gap-3 font-black shadow-lg hover:brightness-105 transition-all">
-            <Icon name="MessageCircle" size={20} /> 官方 LINE 預訂
+        <div className="p-8 space-y-8">
+          <a href={`https://line.me/R/ti/p/~${appSettings.lineId.replace('@','')}`} target="_blank" rel="noreferrer" className="w-full bg-[#06C755] text-white py-4 rounded-2xl flex items-center justify-center gap-2 font-black shadow-lg active:scale-95 transition-transform">
+            <MessageCircle size={20} fill="white" /> LINE 預訂詢問
           </a>
-
-          {/* 圖片牆 */}
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="font-black text-gray-800 text-lg flex items-center gap-2">
-                <Icon name="Megaphone" size={20} className="text-orange-600"/> NEWS & MENU
-              </h2>
-              {isAdmin && <button onClick={() => fileInputRef.current.click()} className="text-orange-600 font-bold text-xs bg-orange-50 px-3 py-1.5 rounded-full border border-orange-100 hover:bg-orange-100">+ 上傳圖片</button>}
+              <h2 className="font-black text-xl italic flex items-center gap-2"><Heart className="fill-orange-600 text-orange-600" size={20}/> 最新公告</h2>
+              {isAdmin && <button onClick={() => fileInputRef.current.click()} className="text-xs bg-black text-white px-4 py-2 rounded-full active:scale-95 transition-transform">上傳公告</button>}
             </div>
-            <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => handleFileUpload(e)} accept="image/*" />
-            
-            {photos.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3">
-                {photos.map(p => (
-                  <div key={p.id} className="relative aspect-[4/5] rounded-2xl overflow-hidden group border-2 border-white shadow-md">
-                    <img src={p.url} className="w-full h-full object-cover cursor-zoom-in" alt="news" onClick={() => setPreviewImage(p.url)} />
-                    {isAdmin && (
-                      <button onClick={async () => await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'photos', p.id))} 
-                        className="absolute top-2 right-2 bg-red-500/80 backdrop-blur-sm text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Icon name="X" size={14}/>
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl py-10 flex flex-col items-center justify-center text-gray-300">
-                <Icon name="Image" size={32} className="mb-2 opacity-20" />
-                <p className="text-xs font-bold italic">尚無最新消息</p>
-              </div>
-            )}
-          </div>
-
-          {/* 介紹區 */}
-          <div className="space-y-6 pt-6 border-t border-orange-50">
-            <div className="bg-orange-50 p-6 rounded-[2rem] border border-orange-100 relative overflow-hidden">
-              <h3 className="text-orange-800 font-black text-md mb-3 flex items-center gap-2">
-                <Icon name="Heart" size={16} className="fill-orange-800" /> 品牌故事
-              </h3>
-              <p className="text-gray-600 text-sm leading-relaxed font-medium">{appSettings.brandStory}</p>
-            </div>
-            <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-sm">
-              <h3 className="text-gray-800 font-black text-md mb-3 flex items-center gap-2">
-                <Icon name="Wheat" size={16} className="text-orange-600" /> 吐司介紹
-              </h3>
-              <p className="text-gray-500 text-sm leading-relaxed font-medium italic">{appSettings.toastIntro}</p>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e)=>handleUpload(e,'photo')} />
+            <div className="grid grid-cols-2 gap-3">
+              {photos.length === 0 && <div className="col-span-2 py-10 text-center text-gray-300 text-xs font-bold border-2 border-dashed rounded-3xl">暫無照片</div>}
+              {photos.map(p => (
+                <div key={p.id} className="relative aspect-square rounded-2xl overflow-hidden border border-orange-50 bg-gray-100 shadow-sm group">
+                  <img src={p.url} className="w-full h-full object-cover" alt="公告" />
+                  {isAdmin && (
+                    <button onClick={async(e)=>{ e.stopPropagation(); if(window.confirm('確定要刪除這張照片嗎？')) await deleteDoc(doc(db,'artifacts',ISLAND_APP_ID,'public','data','photos',p.id)) }} 
+                      className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 size={14}/>
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* 行程編輯彈窗 */}
+      {/* 行程彈窗 */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-[60]" onClick={() => setIsModalOpen(false)}>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-orange-600 p-6 text-white flex justify-between items-center">
-              <div className="font-black tracking-wider">{selectedDate}</div>
-              <button onClick={() => setIsModalOpen(false)}><Icon name="X" size={24}/></button>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50" onClick={() => setIsModalOpen(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-black">{selectedDate}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-gray-400"><X/></button>
             </div>
-            <div className="p-8">
-              {isAdmin ? (
-                <div className="space-y-4">
-                  <div className="flex bg-gray-100 p-1.5 rounded-2xl">
-                    <button onClick={() => setEditingEvent({...editingEvent, type: 'work'})} className={`flex-1 py-3 rounded-xl font-black transition-all ${editingEvent.type === 'work' ? 'bg-white shadow-md text-orange-600' : 'text-gray-400'}`}>擺攤</button>
-                    <button onClick={() => setEditingEvent({...editingEvent, type: 'rest'})} className={`flex-1 py-3 rounded-xl font-black transition-all ${editingEvent.type === 'rest' ? 'bg-white shadow-md text-gray-500' : 'text-gray-400'}`}>店休</button>
-                  </div>
-                  {editingEvent.type === 'work' ? (
-                    <>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 ml-2 uppercase">擺攤地點</label>
-                        <input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none ring-1 ring-inset ring-gray-100 focus:ring-orange-500" value={editingEvent.location} onChange={e => setEditingEvent({...editingEvent, location: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black text-gray-400 ml-2 uppercase">營業時間</label>
-                        <input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold border-none ring-1 ring-inset ring-gray-100 focus:ring-orange-500" value={editingEvent.time} onChange={e => setEditingEvent({...editingEvent, time: e.target.value})} />
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-gray-400 ml-2 uppercase">備註</label>
-                    <textarea className="w-full p-4 bg-gray-50 rounded-2xl text-sm h-24 border-none ring-1 ring-inset ring-gray-100 focus:ring-orange-500" value={editingEvent.note} onChange={e => setEditingEvent({...editingEvent, note: e.target.value})} />
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={saveEvent} className="flex-[3] bg-orange-600 text-white py-4 rounded-2xl font-black">儲存</button>
-                    <button onClick={deleteEvent} className="flex-1 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center"><Icon name="Trash2" size={20}/></button>
-                  </div>
+            {isAdmin ? (
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <button onClick={()=>setEditingEvent({...editingEvent, type:'work'})} className={`flex-1 py-3 rounded-xl border-2 font-black transition-all ${editingEvent.type==='work'?'border-orange-600 bg-orange-50 text-orange-600':'border-gray-100 text-gray-400'}`}>出攤</button>
+                  <button onClick={()=>setEditingEvent({...editingEvent, type:'rest'})} className={`flex-1 py-3 rounded-xl border-2 font-black transition-all ${editingEvent.type==='rest'?'border-gray-600 bg-gray-50 text-gray-600':'border-gray-100 text-gray-400'}`}>店休</button>
                 </div>
-              ) : (
-                <div className="text-center space-y-6">
-                  {editingEvent.type === 'rest' ? <div className="py-10 text-gray-300 font-black text-2xl italic">本日店休</div> : (
-                    <>
-                      <div className="space-y-1">
-                        <div className="text-orange-400 text-[10px] font-black uppercase tracking-widest">Location</div>
-                        <div className="text-2xl font-black text-gray-800">{editingEvent.location}</div>
-                      </div>
-                      <div className="bg-orange-50 p-4 rounded-2xl inline-block">
-                        <div className="text-orange-600 font-black text-lg">{editingEvent.time}</div>
-                      </div>
-                      {editingEvent.note && <p className="text-gray-500 text-sm italic">{editingEvent.note}</p>}
-                      <a href={getLineLink(selectedDate, editingEvent)} target="_blank" className="w-full bg-[#06C755] text-white py-4 rounded-2xl flex items-center justify-center gap-2 font-black shadow-lg"><Icon name="MessageCircle" size={20}/> 立即預訂</a>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+                {editingEvent.type === 'work' && <input className="w-full p-4 bg-gray-100 rounded-xl font-bold focus:ring-2 ring-orange-500 outline-none" placeholder="輸入地點 (例如：信義區)" value={editingEvent.location} onChange={e=>setEditingEvent({...editingEvent, location:e.target.value})} />}
+                <button onClick={async()=>{ await setDoc(doc(db,'artifacts',ISLAND_APP_ID,'public', 'data', 'events', selectedDate), editingEvent); setIsModalOpen(false); }} className="w-full bg-orange-600 text-white py-4 rounded-xl font-black shadow-lg">儲存並發佈</button>
+                <button onClick={async()=>{ if(window.confirm('刪除行程？')) { await deleteDoc(doc(db,'artifacts',ISLAND_APP_ID,'public','data','events',selectedDate)); setIsModalOpen(false); } }} className="w-full text-red-500 py-2 text-sm font-bold">刪除行程</button>
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <div className="text-2xl font-black text-orange-600">{events[selectedDate]?.type === 'rest' ? '今日店休' : (events[selectedDate]?.location || '當日暫無行程')}</div>
+                <p className="text-gray-400 text-xs mt-2 italic">行程以官方公告為主</p>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* 設定彈窗 */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-[100]" onClick={() => setIsSettingsOpen(false)}>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="bg-gray-800 p-6 text-white flex justify-between items-center font-black text-xs tracking-widest uppercase sticky top-0 z-10"><span>管理中心</span><button onClick={() => setIsSettingsOpen(false)}><Icon name="X" size={20}/></button></div>
-            <div className="p-8 space-y-6">
-              <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase">標題</label><input className="w-full p-4 bg-gray-50 rounded-2xl text-sm font-bold" value={tempSettings.title} onChange={e => setTempSettings({...tempSettings, title: e.target.value})} /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-orange-600 uppercase">跑馬燈內容</label><input className="w-full p-4 bg-orange-50 rounded-2xl text-sm font-bold" value={tempSettings.marquee} onChange={e => setTempSettings({...tempSettings, marquee: e.target.value})} /></div>
-              <div className="space-y-1"><label className="text-[10px] font-black text-gray-400 uppercase">LINE ID</label><input className="w-full p-4 bg-green-50 rounded-2xl text-sm font-bold" value={tempSettings.lineId} onChange={e => setTempSettings({...tempSettings, lineId: e.target.value})} /></div>
-              <button onClick={saveSettings} className="w-full py-4 bg-orange-600 text-white font-black rounded-2xl shadow-xl mt-4">儲存設定</button>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50" onClick={() => setIsSettingsOpen(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 space-y-4 shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-xl font-black">品牌基本資訊</h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-gray-400"><X/></button>
             </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400">店名</label>
+              <input className="w-full p-3 bg-gray-100 rounded-xl font-bold outline-none" placeholder="標題" value={tempSettings.title} onChange={e=>setTempSettings({...tempSettings, title:e.target.value})} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400">副標題</label>
+              <input className="w-full p-3 bg-gray-100 rounded-xl font-bold outline-none" placeholder="副標題" value={tempSettings.subtitle} onChange={e=>setTempSettings({...tempSettings, subtitle:e.target.value})} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400">跑馬燈文字</label>
+              <input className="w-full p-3 bg-gray-100 rounded-xl font-bold outline-none" placeholder="跑馬燈" value={tempSettings.marquee} onChange={e=>setTempSettings({...tempSettings, marquee:e.target.value})} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-gray-400">LINE ID</label>
+              <input className="w-full p-3 bg-gray-100 rounded-xl font-bold outline-none" placeholder="例如 @516mdfqz" value={tempSettings.lineId} onChange={e=>setTempSettings({...tempSettings, lineId:e.target.value})} />
+            </div>
+            <button onClick={async()=>{ await setDoc(doc(db,'artifacts',ISLAND_APP_ID,'public','data','settings','general'), tempSettings); setIsSettingsOpen(false); }} className="w-full bg-black text-white py-4 rounded-xl font-black shadow-lg">儲存設定</button>
           </div>
         </div>
       )}
 
-      {/* 圖片全螢幕預覽 */}
-      {previewImage && (
-        <div className="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-[110]" onClick={() => setPreviewImage(null)}>
-          <img src={previewImage} className="max-w-full max-h-[90vh] object-contain rounded-xl" alt="preview" />
-          <button className="absolute top-6 right-6 text-white"><Icon name="X" size={32} /></button>
-        </div>
-      )}
-      
+      {/* 全域讀取遮罩 */}
       {isUploading && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-[200] flex flex-col items-center justify-center font-black text-orange-600">
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-[100]">
           <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-          處理中...
+          <p className="font-black text-orange-600 animate-pulse">正在處理圖片並同步至雲端...</p>
         </div>
       )}
     </div>
