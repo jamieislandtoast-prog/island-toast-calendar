@@ -55,11 +55,11 @@
 
     const ISLAND_APP_ID = 'island-toast-live';
 
-    // 你原本的 LINE 固定邏輯（不改）
+    // LINE 固定（不改）
     const FIXED_LINE_ID = '@516mdfqz';
     const LINE_URL = `https://line.me/R/ti/p/${FIXED_LINE_ID}`;
 
-    // ===== Firestore Paths（新增 settings 與 menuNews，不動 events 原路徑）=====
+    // Firestore Paths（events 不動；新增 settings / menuNews）
     const PATHS = {
       eventsCol: () => db.collection('artifacts').doc(ISLAND_APP_ID).collection('public').doc('data').collection('events'),
       settingsDoc: () => db.collection('artifacts').doc(ISLAND_APP_ID).collection('public').doc('data').collection('settings').doc('general'),
@@ -86,7 +86,7 @@
       return <span ref={iconRef} className="inline-flex items-center justify-center" />;
     };
 
-    // ===== 圖片壓縮（base64）=====
+    // 圖片壓縮（base64）
     const compressImage = (file, maxWidth = 1200, quality = 0.82) => {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -121,10 +121,10 @@
       const [viewMode, setViewMode] = useState('month');
       const [currentDate, setCurrentDate] = useState(new Date());
 
-      // 不動：events 仍用你原本的資料結構
+      // events（不改）
       const [events, setEvents] = useState({});
 
-      // 新增：settings 從 Firestore 同步
+      // settings（新增同步）
       const [appSettings, setAppSettings] = useState({
         title: '島嶼生吐司',
         subtitle: 'ISLAND TOAST',
@@ -132,11 +132,11 @@
         logoUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=200'
       });
 
-      // 新增：MENU & NEWS（最多 5 張）
+      // MENU & NEWS（最多 5 張）
       const [menuNews, setMenuNews] = useState([]);
       const menuNewsInputRef = useRef(null);
 
-      // Logo 上傳 input
+      // Logo input
       const logoInputRef = useRef(null);
 
       const [isModalOpen, setIsModalOpen] = useState(false);
@@ -145,7 +145,11 @@
 
       const [isUploading, setIsUploading] = useState(false);
 
-      // ===== 管理員模式 + 登入 =====
+      // Lightbox（放大預覽）
+      const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+      const [lightboxImage, setLightboxImage] = useState({ url: "", title: "" });
+
+      // 管理員模式 + 登入
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         if (params.get('admin') === '1') setIsAdmin(true);
@@ -161,7 +165,7 @@
         return () => unsubscribe();
       }, []);
 
-      // ===== Firestore 即時同步：events（不改你原本路徑）=====
+      // events 同步（不改路徑）
       useEffect(() => {
         if (!user) return;
 
@@ -175,7 +179,7 @@
         return () => unsubEvents();
       }, [user]);
 
-      // ===== Firestore 即時同步：settings（新增）=====
+      // settings 同步
       useEffect(() => {
         if (!user) return;
 
@@ -189,7 +193,7 @@
         return () => unsubSettings();
       }, [user]);
 
-      // ===== Firestore 即時同步：MENU & NEWS（新增，最多 5 張）=====
+      // MENU & NEWS 同步
       useEffect(() => {
         if (!user) return;
 
@@ -204,13 +208,14 @@
         return () => unsubMenuNews();
       }, [user]);
 
-      // ===== Inline Edit：點擊標題/副標題/跑馬燈（管理員）=====
+      // 點擊標題/副標題/跑馬燈編輯
       const editSettingField = async (field, label) => {
         if (!isAdmin) return;
         const current = (appSettings && appSettings[field]) ? String(appSettings[field]) : '';
         const next = window.prompt(`編輯${label}`, current);
-        if (next === null) return; // cancel
+        if (next === null) return;
         const trimmed = next.trim();
+
         setIsUploading(true);
         try {
           await PATHS.settingsDoc().set({ [field]: trimmed }, { merge: true });
@@ -222,18 +227,18 @@
         }
       };
 
-      // ===== 點擊大頭貼換 Logo（管理員）=====
+      // 點擊大頭貼換 Logo
       const onPickLogo = () => {
         if (!isAdmin) return;
-        if (logoInputRef.current) logoInputRef.current.click();
+        logoInputRef.current && logoInputRef.current.click();
       };
 
       const handleLogoUpload = async (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
+
         setIsUploading(true);
         try {
-          // logo 小一點
           const base64 = await compressImage(file, 500, 0.82);
           await PATHS.settingsDoc().set({ logoUrl: base64 }, { merge: true });
         } catch (err) {
@@ -245,17 +250,16 @@
         }
       };
 
-      // ===== MENU & NEWS：上傳（最多 5 張）=====
+      // MENU & NEWS 上傳（最多 5）
       const onPickMenuNews = () => {
         if (!isAdmin) return;
-        if (menuNewsInputRef.current) menuNewsInputRef.current.click();
+        menuNewsInputRef.current && menuNewsInputRef.current.click();
       };
 
       const handleMenuNewsUpload = async (e) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
 
-        // 最多 5 張：現有 + 本次 <= 5
         const remain = Math.max(0, 5 - (menuNews?.length || 0));
         if (remain <= 0) {
           alert('MENU & NEWS 最多只能 5 張，請先刪除再上傳。');
@@ -287,6 +291,7 @@
       const deleteMenuNews = async (id) => {
         if (!isAdmin) return;
         if (!window.confirm('確定要刪除這張圖片嗎？')) return;
+
         setIsUploading(true);
         try {
           await PATHS.menuNewsCol().doc(id).delete();
@@ -298,7 +303,7 @@
         }
       };
 
-      // ===== 日期工具（保持你原本邏輯）=====
+      // 日期工具
       const formatDateKey = (date) => {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       };
@@ -450,13 +455,13 @@
               </div>
             )}
 
-            {/* 跑馬燈（管理員可點擊編輯） */}
+            {/* 跑馬燈（字加大） */}
             <div
-              className={`bg-orange-600 text-white py-2.5 overflow-hidden ${isAdmin ? 'cursor-pointer' : ''}`}
+              className={`bg-orange-600 text-white py-3 overflow-hidden ${isAdmin ? 'cursor-pointer' : ''}`}
               onClick={() => editSettingField('marquee', '跑馬燈')}
               title={isAdmin ? '點擊編輯跑馬燈' : ''}
             >
-              <div className="animate-marquee whitespace-nowrap font-bold text-[10px] tracking-widest">
+              <div className="animate-marquee whitespace-nowrap font-black text-sm tracking-widest">
                 <span className="px-12">{appSettings.marquee}</span>
                 <span className="px-12">{appSettings.marquee}</span>
                 <span className="px-12">{appSettings.marquee}</span>
@@ -478,18 +483,18 @@
 
               {/* Title（管理員可點擊編輯） */}
               <h1
-                className={`text-3xl font-black text-gray-800 tracking-tight ${isAdmin ? 'cursor-pointer hover:opacity-80' : ''}`}
+                className={`text-3xl font-black text-gray-800 tracking-tight text-center ${isAdmin ? 'cursor-pointer hover:opacity-80' : ''}`}
                 onClick={() => editSettingField('title', '標題')}
                 title={isAdmin ? '點擊編輯標題' : ''}
               >
                 {appSettings.title}
               </h1>
 
-              {/* Subtitle（管理員可點擊編輯） */}
+              {/* Subtitle（置中＋可換行） */}
               <p
-                className={`text-orange-500 font-black text-[10px] tracking-[0.4em] uppercase mt-1 ${isAdmin ? 'cursor-pointer hover:opacity-80' : ''}`}
+                className={`text-orange-500 font-black text-[11px] tracking-[0.35em] uppercase mt-2 text-center whitespace-pre-wrap break-words px-6 leading-relaxed ${isAdmin ? 'cursor-pointer hover:opacity-80' : ''}`}
                 onClick={() => editSettingField('subtitle', '副標題')}
-                title={isAdmin ? '點擊編輯副標題' : ''}
+                title={isAdmin ? '點擊編輯副標題（可用 Enter 換行）' : ''}
               >
                 {appSettings.subtitle}
               </p>
@@ -559,7 +564,7 @@
               </a>
             </div>
 
-            {/* ===== MENU & NEWS（新增區塊）===== */}
+            {/* MENU & NEWS */}
             <div className="px-8 pb-12">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex flex-col">
@@ -594,8 +599,17 @@
                   </div>
                 ) : (
                   menuNews.slice(0, 5).map(item => (
-                    <div key={item.id} className="relative aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-sm group">
-                      <img src={item.url} className="w-full h-full object-cover" alt={item.title || 'MENU & NEWS'} />
+                    <div
+                      key={item.id}
+                      className="relative aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 shadow-sm group cursor-pointer"
+                      onClick={() => {
+                        setLightboxImage({ url: item.url, title: item.title || "MENU & NEWS" });
+                        setIsLightboxOpen(true);
+                      }}
+                      title="點擊放大"
+                    >
+                      <img src={item.url} className="w-full h-full object-cover" alt={item.title || "MENU & NEWS"} />
+
                       {isAdmin && (
                         <button
                           onClick={(e) => { e.stopPropagation(); deleteMenuNews(item.id); }}
@@ -618,7 +632,7 @@
             </div>
           </div>
 
-          {/* ===== Event Modal（保留你原本邏輯，只在 admin 下可更新）===== */}
+          {/* Event Modal（保留原本邏輯） */}
           {isModalOpen && (
             <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-6 z-[100] no-print" onClick={() => setIsModalOpen(false)}>
               <div className="bg-white rounded-[3rem] w-full max-w-sm p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
@@ -720,7 +734,39 @@
             </div>
           )}
 
-          {/* 全域上傳中遮罩 */}
+          {/* Lightbox（點圖放大） */}
+          {isLightboxOpen && (
+            <div
+              className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={() => setIsLightboxOpen(false)}
+            >
+              <div
+                className="relative w-full max-w-3xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  className="absolute -top-12 right-0 text-white/90 hover:text-white font-black text-xl px-3 py-1 rounded-lg"
+                  onClick={() => setIsLightboxOpen(false)}
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+
+                <div className="bg-white rounded-2xl overflow-hidden shadow-2xl">
+                  <img
+                    src={lightboxImage.url}
+                    alt={lightboxImage.title}
+                    className="w-full h-auto max-h-[80vh] object-contain bg-black"
+                  />
+                  <div className="px-4 py-3 text-sm font-black text-gray-700">
+                    {lightboxImage.title}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 上傳中遮罩 */}
           {isUploading && (
             <div className="fixed inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center z-[200]">
               <div className="w-14 h-14 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mb-4 shadow-xl"></div>
