@@ -1,13 +1,10 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* 你的原本全域樣式（搬來這裡） */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
-
-body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8f8f8; }
-@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-33.33%); } }
-.animate-marquee { display: inline-flex; animation: marquee 25s linear infinite; }
-@media print { .no-print { display: none !important; } .print-only { display: block !important; } body { background: white; } }
-::-webkit-scrollbar { width: 0px; background: transparent; }
-.calendar-grid { display: grid; grid-template-columns: 2.5rem repeat(7, 1fr); }
+body {
+  font-family: "Noto Sans TC", sans-serif;
+  background-color: #f8f8f8;
+}
