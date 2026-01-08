@@ -1,0 +1,5 @@
+{
+  "installCommand": "npm install",
+  "buildCommand": "node -v && npm -v && ls -la && cat package.json && npx vite --version && npm run build",
+  "outputDirectory": "dist"
+}
