@@ -369,10 +369,14 @@ export default function App() {
       }
 
       rows.push(
-        <div key={`r-${r}`} className="calendar-grid">
-          {cells}
-        </div>
-      );
+  <div
+    key={`r-${r}`}
+    className="grid grid-cols-[2.5rem_repeat(7,minmax(0,1fr))]"
+  >
+    {cells}
+  </div>
+);
+
     }
 
     return rows;
