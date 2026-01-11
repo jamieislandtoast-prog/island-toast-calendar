@@ -555,19 +555,19 @@ export default function App() {
 
             {viewMode === "month" ? (
               <>
-                <div className="calendar-grid text-center border-t border-gray-100 bg-gray-50/30">
-                  <div className="py-2.5 text-[9px] font-black text-gray-300 border-r border-gray-100">
-                    WEEK
-                  </div>
-                  {["日", "一", "二", "三", "四", "五", "六"].map((d) => (
-                    <div
-                      key={d}
-                      className="py-2.5 text-[10px] font-bold text-gray-400 border-r border-gray-100 last:border-0"
-                    >
-                      {d}
-                    </div>
-                  ))}
-                </div>
+                <div className="grid grid-cols-[2.5rem_repeat(7,minmax(0,1fr))] text-center border-t border-gray-100 bg-gray-50/30">
+  <div className="py-2.5 text-[9px] font-black text-gray-300 border-r border-gray-100 flex items-center justify-center">
+    WEEK
+  </div>
+  {['日','一','二','三','四','五','六'].map(d => (
+    <div
+      key={d}
+      className="py-2.5 text-[10px] font-bold text-gray-400 border-r border-gray-100 last:border-0 flex items-center justify-center"
+    >
+      {d}
+    </div>
+  ))}
+</div>
                 <div className="flex flex-col border-t border-gray-100">{renderMonthCalendar()}</div>
               </>
             ) : (
