@@ -339,7 +339,7 @@ export default function App() {
                 );
                 setIsModalOpen(true);
               }}
-              className="h-16 border-t border-r border-gray-100 p-1 cursor-pointer hover:bg-orange-50 transition-colors relative"
+              className="h-16 overflow-hidden border-t border-r border-gray-100 p-1 cursor-pointer hover:bg-orange-50 transition-colors relative"
             >
               <span
                 className={`text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full ${
@@ -351,11 +351,7 @@ export default function App() {
 
               {ev && (
                 <div
-                  className={`mt-1 text-[8px] p-0.5 rounded-sm truncate font-bold border-l-2 ${
-                    ev.type === "work"
-                      ? "bg-orange-100 text-orange-700 border-orange-500"
-                      : "bg-gray-100 text-gray-400 border-gray-300"
-                  }`}
+                  className={`mt-1 text-[8px] leading-none p-0.5 rounded-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis border-l-2 ${ev.type === 'work' ? 'bg-orange-100 text-orange-700 border-orange-500' : 'bg-gray-100 text-gray-400 border-gray-300'}`}
                 >
                   {ev.type === "rest" ? "休" : ev.location}
                 </div>
